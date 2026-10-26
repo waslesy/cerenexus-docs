@@ -12,3 +12,7 @@ hero:
       text: 进阶教程（敬请期待）
       link: /advanced/
 ---
+## 参与贡献
+
+发现错别字或想补充内容？每篇文章右上角的「在 GitHub 上编辑此页」可以直接修改，提交后网站会自动更新。
+详细流程见 [CONTRIBUTING.md](https://github.com/waslesy/cerenexus-docs/blob/main/CONTRIBUTING.md)。
