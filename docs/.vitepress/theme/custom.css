@@ -1,0 +1,9 @@
+@font-face {
+  font-family: 'Twemoji Country Flags';
+  unicode-range: U+1F1E6-1F1FF;
+  src: url('https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1/dist/TwemojiCountryFlags.woff2') format('woff2');
+}
+
+body {
+  font-family: 'Twemoji Country Flags', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
+}

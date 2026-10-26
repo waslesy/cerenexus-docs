@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流式 vs 非流式 竞速模拟器</title>
+    <style>
+        :root {
+            --bg-color: #F8F5F0;
+            --text-main: #2C3E50;
+            --border-color: #D5CABD;
+            --roman-red: #8B2635;
+            --elegant-blue: #1A5F7A;
+            --timer-bg: #EAE0D5;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        h2 {
+            font-family: "Georgia", serif;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .header-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        button {
+            padding: 12px 30px;
+            background-color: var(--roman-red);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            font-family: "Georgia", serif;
+            transition: 0.3s;
+        }
+        button:hover { background-color: #6b1d28; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .stopwatch {
+            font-family: monospace;
+            font-size: 24px;
+            font-weight: bold;
+            background: var(--timer-bg);
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .arena {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .arena { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 15px;
+            color: white;
+            font-family: "Georgia", serif;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .stream-bg { background-color: var(--elegant-blue); }
+        .non-stream-bg { background-color: #4a5568; }
+        
+        .metrics {
+            font-family: monospace;
+            font-size: 13px;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .content-box {
+            padding: 20px;
+            flex: 1;
+            min-height: 250px;
+            font-size: 15px;
+            line-height: 1.8;
+            position: relative;
+        }
+        .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            color: #888;
+        }
+        .spinner-icon {
+            width: 30px;
+            height: 30px;
+            border: 3px solid #eee;
+            border-top: 3px solid #888;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 10px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* 光标闪烁效果 */
+        .cursor::after {
+            content: '▍';
+            animation: blink 1s step-end infinite;
+            color: var(--text-main);
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <h2>TTFT 首字延迟与上菜速度赛跑</h2>
+
+    <div class="header-controls">
+        <button id="startBtn" onclick="startRace()">发起 API 请求</button>
+        <div class="stopwatch" id="mainTimer">00.00s</div>
+    </div>
+
+    <div class="arena">
+        <div class="panel">
+            <div class="panel-header stream-bg">
+                <span style="font-weight: bold; font-size: 18px;">流式 (Streaming)</span>
+                <div class="metrics" id="streamMetrics">TTFT: -- | 总耗时: --</div>
+            </div>
+            <div class="content-box" id="streamContent">
+                <div style="color: #aaa; font-style: italic;" id="streamHint">等待请求...</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header non-stream-bg">
+                <span style="font-weight: bold; font-size: 18px;">非流式 (Non-Streaming)</span>
+                <div class="metrics" id="nonStreamMetrics">TTFT: -- | 总耗时: --</div>
+            </div>
+            <div class="content-box" id="nonStreamContent">
+                <div class="loading-spinner" id="nonStreamLoading">
+                    <div class="spinner-icon"></div>
+                    <div>后厨狂暴炒菜中，请干等...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 你可以随意修改这段长文本
+        const demoText = "流式输出宛如古罗马广场上的书记官。当元老院的执政官开始演讲时，书记官手中的羽毛笔便在羊皮纸上沙沙作响，将字句逐一记录。你能清晰地看到每一个词汇是如何从虚无中诞生，并逐渐汇聚成磅礴的篇章。你的视线紧随着笔尖跳动，思维与信息同步流淌，完全无需忍受漫长的空白与等待。\n\n而相比之下，非流式输出则像是一位远征高卢的石匠。他在遥远的营地里，将整篇捷报旷日持久地雕刻在沉重的大理石碑上。直到最后一个标点符号被打磨完毕，信使才会跨上战马，历经跋涉，将这块巨大的石碑完整地送到你的面前。在这段漫长的雕刻与运输过程中，你只能面对空无一物的广场，陷入未知的焦灼。这就是为什么，在面向真实用户的交互场景中，永远推荐使用流式输出。";
+        
+        let timerInterval;
+        let startTime;
+
+        function startRace() {
+            document.getElementById('startBtn').disabled = true;
+            
+            // 重置 UI
+            document.getElementById('streamContent').innerHTML = '<span class="cursor" id="streamText"></span>';
+            document.getElementById('nonStreamContent').innerHTML = `
+                <div class="loading-spinner" id="nonStreamLoading" style="display: flex;">
+                    <div class="spinner-icon"></div>
+                    <div>后厨狂暴炒菜中，请干等...</div>
+                </div>
+                <div id="nonStreamText"></div>
+            `;
+            document.getElementById('streamMetrics').innerText = "TTFT: 计算中... | 总耗时: 计算中...";
+            document.getElementById('nonStreamMetrics').innerText = "TTFT: 计算中... | 总耗时: 计算中...";
+
+            // 启动主秒表
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                let current = (Date.now() - startTime) / 1000;
+                document.getElementById('mainTimer').innerText = current.toFixed(2) + "s";
+            }, 50);
+
+            // 设定模拟参数
+            const ttftTime = 400; // 流式 TTFT 毫秒 (网络握手+首字响应)
+            const tokPerSec = 40; // 模拟每秒 40 个字
+            const msPerChar = 1000 / tokPerSec;
+            const totalGenTime = ttftTime + (demoText.length * msPerChar);
+
+            // --- 1. 流式输出逻辑 (打字机) ---
+            setTimeout(() => {
+                let streamTtft = ((Date.now() - startTime) / 1000).toFixed(2);
+                let currentIndex = 0;
+                let streamTextEl = document.getElementById('streamText');
+
+                let typeInterval = setInterval(() => {
+                    if (currentIndex < demoText.length) {
+                        // 处理换行符
+                        if (demoText[currentIndex] === '\n') {
+                            streamTextEl.innerHTML += '<br>';
+                        } else {
+                            streamTextEl.innerHTML += demoText[currentIndex];
+                        }
+                        currentIndex++;
+                    } else {
+                        clearInterval(typeInterval);
+                        streamTextEl.classList.remove('cursor');
+                        let streamTotal = ((Date.now() - startTime) / 1000).toFixed(2);
+                        document.getElementById('streamMetrics').innerText = `TTFT: ${streamTtft}s | 总耗时: ${streamTotal}s`;
+                    }
+                }, msPerChar);
+            }, ttftTime);
+
+            // --- 2. 非流式输出逻辑 (一次性加载) ---
+            setTimeout(() => {
+                let nonStreamTotal = ((Date.now() - startTime) / 1000).toFixed(2);
+                
+                // 停止 Loading，展示全部文本
+                document.getElementById('nonStreamLoading').style.display = 'none';
+                document.getElementById('nonStreamText').innerHTML = demoText.replace(/\n/g, '<br>');
+                
+                // 非流式的 TTFT 等于总耗时
+                document.getElementById('nonStreamMetrics').innerText = `TTFT: ${nonStreamTotal}s | 总耗时: ${nonStreamTotal}s`;
+                
+                // 停止主计时器并恢复按钮
+                clearInterval(timerInterval);
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('startBtn').innerText = "重新发起请求";
+            }, totalGenTime);
+        }
+    </script>
+</body>
+</html>

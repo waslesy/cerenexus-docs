@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>流式输出模拟 - 2 tok/s (折磨速)</title>
+<style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9f9f9; display: flex; flex-direction: column; align-items: center; padding: 50px; }
+    .chat-container { width: 100%; max-width: 600px; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-top: 4px solid #bba14f; min-height: 150px; line-height: 1.8; font-size: 16px; color: #333; }
+    .cursor { display: inline-block; width: 8px; height: 1.2em; background-color: #bba14f; vertical-align: middle; margin-left: 2px; animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    button { margin-top: 20px; padding: 10px 20px; font-size: 14px; cursor: pointer; border: none; background-color: #333; color: white; border-radius: 6px; transition: 0.2s; }
+    button:hover { background-color: #555; }
+    .status { margin-top: 10px; font-size: 14px; color: #666; }
+</style>
+</head>
+<body>
+
+    <div class="chat-container">
+        <span id="output"></span><span class="cursor" id="cursor"></span>
+    </div>
+    <div class="status">当前速度: 2 tok/s (约 3.5 字/秒) - 模拟人类打字</div>
+    <button id="playBtn" onclick="startStream()">开始播放 (2 tok/s)</button>
+
+    <script>
+        const text = "斯巴达的重装步兵在烈日下一步一步推进，这沉重而缓慢的步伐，正如真理显现的过程一样折磨人。";
+        const tokensPerSecond = 2;
+        const charsPerToken = 1.75; // 1 Token 约 1.5~2 个汉字
+        const msPerChar = 1000 / (tokensPerSecond * charsPerToken); // 约 285ms 出一个字
+        let index = 0;
+        let timer;
+
+        function startStream() {
+            // 点击后将按钮文字改为“重新播放”
+            document.getElementById("playBtn").innerText = "重新播放 (2 tok/s)";
+            clearTimeout(timer);
+            document.getElementById("output").innerText = "";
+            document.getElementById("cursor").style.display = "inline-block";
+            index = 0;
+            type();
+        }
+
+        function type() {
+            if (index < text.length) {
+                document.getElementById("output").innerText += text.charAt(index);
+                index++;
+                timer = setTimeout(type, msPerChar);
+            } else {
+                document.getElementById("cursor").style.display = "none";
+            }
+        }
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KV Cache 缓存机制动画演示</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 900px;
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+            box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:active {
+            transform: translateY(2px);
+            box-shadow: none;
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        
+        .stage {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .round-box {
+            display: none;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        .round-title {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .messages {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .token {
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            border: 2px solid transparent;
+            transition: all 0.4s ease;
+            opacity: 0;
+            transform: scale(0.9);
+            animation: popIn 0.3s forwards;
+        }
+
+        /* 状态样式 */
+        .state-computing {
+            background: #fff5f5;
+            color: #c92a2a;
+            border-color: #ffc9c9;
+            box-shadow: 0 0 15px rgba(255, 107, 107, 0.4);
+            animation: popIn 0.3s forwards, pulseCompute 1s infinite alternate !important;
+        }
+        .state-computing::after { content: ' 🔥 计算中(焯水)'; }
+        
+        .state-cached {
+            background: #ebfbee;
+            color: #2b8a3e;
+            border-color: #b2f2bb;
+        }
+        .state-cached::after { content: ' ✅ 命中缓存(取肉)'; }
+        
+        .state-saving {
+            background: #e7f5ff;
+            color: #1864ab;
+            border-color: #a5d8ff;
+        }
+        .state-saving::after { content: ' 📦 存入缓存(进冰箱)'; }
+
+        /* 新增：计算完成并存入后的最终展示状态 */
+        .state-saved {
+            background: #e3fafc;
+            color: #0b7285;
+            border-color: #99e9f2;
+        }
+        .state-saved::after { content: ' ❄️ 已冷冻(在冰箱)'; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes popIn {
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes pulseCompute {
+            from { transform: scale(1); }
+            to { transform: scale(1.03); }
+        }
+
+        .status-bar {
+            margin-top: 25px;
+            padding: 15px;
+            background: #fff3cd;
+            border-left: 5px solid #ffc107;
+            border-radius: 4px;
+            color: #856404;
+            font-size: 15px;
+            line-height: 1.6;
+            min-height: 50px;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🥩 KV Cache 机制演示：对话历史是如何“焯水”的</h2>
+    
+    <div class="controls">
+        <button id="nextBtn" onclick="nextStep()">开始第一轮请求</button>
+    </div>
+
+    <div class="stage" id="stage">
+        </div>
+
+    <div class="status-bar" id="statusBar">
+        等待开始... 每次点击按钮将模拟一次 API 请求。
+    </div>
+</div>
+
+<script>
+    const data = [
+        {
+            title: "第一轮：全新的开始",
+            desc: "由于没有任何缓存，系统提示词、用户问题、AI回答都需要从头开始计算（焯水），算完后存入缓存（放进冰箱）。🔥🔥🔥",
+            tokens: [
+                { text: "System", type: "new" },
+                { text: "User1: 珠峰多高", type: "new" },
+                { text: "Assistant1: 8848米", type: "new" }
+            ]
+        },
+        {
+            title: "第二轮：接着聊",
+            desc: "由于前缀没有改变，前三个节点直接命中缓存（✅），只对新增的 User2 提问进行计算（🔥），算完追加进缓存。",
+            tokens: [
+                { text: "System", type: "cached" },
+                { text: "User1: 珠峰多高", type: "cached" },
+                { text: "Assistant1: 8848米", type: "cached" },
+                { text: "User2: 第二高呢？", type: "new" },
+                { text: "Assistant2: 乔戈里峰", type: "new" }
+            ]
+        },
+        {
+            title: "第三轮：雪球越滚越大，但计算量很小",
+            desc: "请求体变得很长，但前五个节点全部命中缓存（✅），再次省下了大量算力，只计算最后一条新消息。",
+            tokens: [
+                { text: "System", type: "cached" },
+                { text: "User1: 珠峰多高", type: "cached" },
+                { text: "Assistant1: 8848米", type: "cached" },
+                { text: "User2: 第二高呢？", type: "cached" },
+                { text: "Assistant2: 乔戈里峰", type: "cached" },
+                { text: "User3: 在哪个国家？", type: "new" }
+            ]
+        }
+    ];
+
+    let currentRound = 0;
+    const btn = document.getElementById('nextBtn');
+    const stage = document.getElementById('stage');
+    const statusBar = document.getElementById('statusBar');
+
+    function nextStep() {
+        if (currentRound >= data.length) return;
+        
+        btn.disabled = true;
+        const roundData = data[currentRound];
+        
+        // 创建本轮容器
+        const roundBox = document.createElement('div');
+        roundBox.className = 'round-box';
+        roundBox.style.display = 'block';
+        
+        const title = document.createElement('div');
+        title.className = 'round-title';
+        title.innerHTML = `<span>${roundData.title}</span>`;
+        
+        const messagesDiv = document.createElement('div');
+        messagesDiv.className = 'messages';
+        
+        roundBox.appendChild(title);
+        roundBox.appendChild(messagesDiv);
+        stage.appendChild(roundBox);
+        
+        statusBar.innerHTML = "正在发送请求...";
+
+        // 依次渲染 Token
+        let delay = 0;
+        const tokenElements = [];
+
+        roundData.tokens.forEach((t, index) => {
+            setTimeout(() => {
+                const tokenDiv = document.createElement('div');
+                tokenDiv.className = 'token';
+                tokenDiv.innerText = t.text;
+                
+                // 初始状态
+                if (t.type === 'cached') {
+                    tokenDiv.classList.add('state-cached');
+                    statusBar.innerHTML = `检测到前缀匹配... <b>${t.text}</b> 直接从缓存读取！省钱了！`;
+                } else {
+                    tokenDiv.classList.add('state-computing');
+                    statusBar.innerHTML = `遇到新内容... 正在计算 <b>${t.text}</b> 🔥`;
+                }
+                
+                messagesDiv.appendChild(tokenDiv);
+                tokenElements.push({ el: tokenDiv, type: t.type });
+
+                // 如果是最后一个 token，触发结算动画
+                if (index === roundData.tokens.length - 1) {
+                    setTimeout(() => finishRound(tokenElements, roundData.desc), 1500);
+                }
+            }, delay);
+            delay += 800; // 每个 token 出现的间隔
+        });
+    }
+
+    function finishRound(tokenElements, description) {
+        statusBar.innerHTML = `<b>本轮完成：</b>${description}`;
+        
+        // 修复逻辑：将计算完毕的内容转为“已冷冻/备用”，而不是“命中缓存”
+        tokenElements.forEach(t => {
+            if (t.type === 'new') {
+                t.el.classList.remove('state-computing');
+                t.el.classList.add('state-saving');
+                setTimeout(() => {
+                    t.el.classList.remove('state-saving');
+                    t.el.classList.add('state-saved'); // 这里改为进入 state-saved 状态
+                }, 1000);
+            }
+        });
+
+        currentRound++;
+        
+        if (currentRound < data.length) {
+            btn.innerText = `发送第 ${currentRound + 1} 轮请求`;
+            btn.disabled = false;
+        } else {
+            btn.innerText = "演示结束";
+            btn.disabled = true;
+            statusBar.innerHTML += "<br><br><i>结论：只要保持 System 和旧对话前缀不动，缓存命中率就会极高，从而大幅降低 Token 计费成本。</i>";
+        }
+    }
+</script>
+
+</body>
+</html>

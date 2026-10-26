@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>LLM 玩梗原理：从“家禽”到“只因” (循环播放版)</title>
+    <style>
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            display: flex;
+            gap: 40px;
+            width: 90%;
+            max-width: 1200px;
+        }
+
+        .panel {
+            flex: 1;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+
+        .panel:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.12);
+        }
+
+        h2 {
+            text-align: center;
+            color: #1c1e21;
+            border-bottom: 2px solid #e4e6eb;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+
+        /* 主句展示区 */
+        .sentence-container {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 30px;
+            min-height: 50px;
+            padding: 15px;
+            background-color: #f7f8fa;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .prompt-text {
+            color: #8a8d91;
+            font-size: 1.2rem;
+            width: 100%;
+            margin-bottom: 10px;
+            font-weight: 400;
+        }
+
+        .word-token {
+            display: inline-block;
+            margin: 0 3px;
+            opacity: 0;
+            transform: translateY(-10px);
+            animation: fadeInToken 0.4s forwards;
+        }
+
+        .base-token {
+            color: #1877f2; /* 蓝色代表基础 Prompt */
+            font-weight: bold;
+        }
+
+        .generated-token {
+            color: #d4af37; /* 金色代表 LLM 选择的词 */
+        }
+
+        @keyframes fadeInToken {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 候选词展示区 */
+        .candidates-area {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .candidate-card {
+            background: white;
+            border: 2px solid #e4e6eb;
+            border-radius: 12px;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            opacity: 0;
+            transform: translateX(-20px);
+            transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+        }
+
+        .candidate-card.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* 被选中时的状态 */
+        .candidate-card.selected {
+            border-color: #d4af37;
+            background-color: #fffcf2;
+        }
+
+        /* 梗的特别高亮 */
+        .panel-meme .candidate-card.selected {
+            border-color: #e41e3f; /* 梗采用红色 */
+            background-color: #fff1f3;
+        }
+        
+        .panel-meme .prob-bar-fill {
+            background: #e41e3f;
+        }
+
+        /* 未被选中时的衰退状态 */
+        .candidate-card.fade {
+            opacity: 0.3;
+        }
+
+        .card-word {
+            font-size: 1.8rem;
+            color: #1c1e21;
+            font-weight: bold;
+            margin-right: 20px;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .card-info {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-prob {
+            font-size: 0.9rem;
+            color: #65676b;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        /* 概率进度条 */
+        .prob-bar-bg {
+            height: 8px;
+            background: #e4e6eb;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .prob-bar-fill {
+            height: 100%;
+            background: #d4af37;
+            width: 0%;
+            transition: width 1s ease-out;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 模式 A：默认情况 -->
+    <div class="panel panel-default" id="panelDefault">
+        <h2>模式 A：默认（零上下文）</h2>
+        <div class="sentence-container" id="sentenceDefault">
+            <!-- 内容由JS动态生成/重置 -->
+        </div>
+        <div class="candidates-area" id="candidatesDefault">
+            <!-- 候选词卡片 -->
+        </div>
+    </div>
+
+    <!-- 模式 B：暗示情况 -->
+    <div class="panel panel-meme" id="panelMeme">
+        <h2>模式 B：暗示（我要玩梗）</h2>
+        <div class="sentence-container" id="sentenceMeme">
+            <!-- 内容由JS动态生成/重置 -->
+        </div>
+        <div class="candidates-area" id="candidatesMeme">
+            <!-- 候选词卡片 -->
+        </div>
+    </div>
+</div>
+
+<script>
+    // 数据设计
+    const dataDefault = {
+        promptText: "输入: (无提示)",
+        candidates: [
+            { word: "你", prob: 0.5, desc: "梗" },
+            { word: "肉", prob: 30, desc: "食物" },
+            { word: "是", prob: 45, desc: "家禽", isNext: true }
+        ],
+        finalToken: "是一种家禽"
+    };
+
+    const dataMeme = {
+        promptText: "输入: \"穿背带裤、篮球...\"",
+        candidates: [
+            { word: "是", prob: 1, desc: "家禽" },
+            { word: "肉", prob: 1, desc: "食物" },
+            { word: "你", prob: 98, desc: "梗", isNext: true }
+        ],
+        finalToken: "太美"
+    };
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // 重置面板状态
+    function resetPanel(panelId, sentenceId, candidatesId, promptText) {
+        const sentenceBox = document.getElementById(sentenceId);
+        const candidatesBox = document.getElementById(candidatesId);
+        
+        // 清空候选词区
+        candidatesBox.innerHTML = ''; 
+        
+        // 还原主句区为初始状态
+        sentenceBox.innerHTML = `
+            <div class="prompt-text">${promptText}</div>
+            <span class="word-token base-token" style="opacity: 1; transform: none;">鸡</span>
+        `;
+    }
+
+    async function runPanelAnimation(panelId, candidatesId, data) {
+        const candidatesBox = document.getElementById(candidatesId);
+
+        // 1. 生成卡片
+        const cards = [];
+        let selectedWord = "";
+
+        data.candidates.forEach((c, index) => {
+            const card = document.createElement('div');
+            card.className = 'candidate-card';
+            card.innerHTML = `
+                <div class="card-word">${c.word}</div>
+                <div class="card-info">
+                    <div class="card-prob">${c.prob}% (${c.desc})</div>
+                    <div class="prob-bar-bg">
+                        <div class="prob-bar-fill" id="${panelId}-bar-${index}"></div>
+                    </div>
+                </div>
+            `;
+            candidatesBox.appendChild(card);
+            cards.push({ element: card, data: c });
+            if (c.isNext) selectedWord = c.word;
+        });
+
+        await sleep(100);
+
+        // 2. 卡片浮现与概率条增长
+        cards.forEach((cardObj, index) => {
+            cardObj.element.classList.add('show');
+            setTimeout(() => {
+                const barFill = document.getElementById(`${panelId}-bar-${index}`);
+                barFill.style.width = `${cardObj.data.prob}%`;
+            }, 300);
+        });
+
+        await sleep(2500); // 留时间看概率对比
+
+        // 3. 筛选大概率词
+        cards.forEach(cardObj => {
+            if (cardObj.data.isNext) {
+                cardObj.element.classList.add('selected');
+            } else {
+                cardObj.element.classList.add('fade');
+            }
+        });
+
+        await sleep(1000);
+
+        // 4. 将选中的词追加到句子中
+        const sentenceBox = document.getElementById(panelId).querySelector('.sentence-container');
+        
+        const nextToken = document.createElement('span');
+        nextToken.className = 'word-token generated-token';
+        nextToken.textContent = selectedWord;
+        sentenceBox.appendChild(nextToken);
+
+        await sleep(500);
+        
+        // 5. 补充后续的词 (让动画更完整)
+        const finalToken = document.createElement('span');
+        finalToken.className = 'word-token';
+        finalToken.style.color = "#7f8c8d";
+        finalToken.style.fontSize = "1.2rem";
+        finalToken.textContent = data.finalToken;
+        sentenceBox.appendChild(finalToken);
+    }
+
+    // 循环播放主逻辑
+    async function startLoop() {
+        while (true) {
+            // 每轮开始前，重置两边面板
+            resetPanel('panelDefault', 'sentenceDefault', 'candidatesDefault', dataDefault.promptText);
+            resetPanel('panelMeme', 'sentenceMeme', 'candidatesMeme', dataMeme.promptText);
+            
+            await sleep(500); // 稍微停顿一下再开始
+
+            // 先运行默认情况
+            await runPanelAnimation('panelDefault', 'candidatesDefault', dataDefault);
+            
+            await sleep(800); // 两边动画之间的间隔
+            
+            // 再运行梗情况
+            await runPanelAnimation('panelMeme', 'candidatesMeme', dataMeme);
+
+            // 整个动画结束后，等待几秒钟供人观看，然后再进入下一轮循环
+            await sleep(4000);
+        }
+    }
+
+    // 启动无限循环动画
+    startLoop();
+
+</script>
+</body>
+</html>

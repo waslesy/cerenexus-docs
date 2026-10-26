@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>迷失在中间 (Lost in the Middle) 模拟器</title>
+    <style>
+        :root {
+            --bg-color: #F8F5F0;
+            --text-main: #2C3E50;
+            --border-color: #D5CABD;
+            --roman-red: #8B2635; /* 高注意力颜色 */
+            --fade-color: #A0AAB5; /* 低注意力颜色 */
+            --clue-bg: rgba(26, 95, 122, 0.15); /* 典雅蓝线索背景 */
+            --clue-border: #1A5F7A;
+        }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            margin: 0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        h2 {
+            font-family: "Georgia", serif;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            flex-shrink: 0;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+            align-items: start;
+            flex: 1;
+            min-height: 0;
+        }
+        @media (max-width: 768px) {
+            html, body { overflow: auto; height: auto; }
+            .dashboard { grid-template-columns: 1fr; }
+        }
+        .controls {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 20px;
+        }
+        .slider-group { margin-bottom: 20px; }
+        .slider-group label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        input[type=range] { width: 100%; cursor: pointer; }
+        
+        .radio-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .radio-group label {
+            flex: 1;
+            text-align: center;
+            background: #eee;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+            font-weight: normal;
+        }
+        .radio-group input { display: none; }
+        .radio-group input:checked + label {
+            background: var(--text-main);
+            color: white;
+            font-weight: bold;
+        }
+
+        .metric-box {
+            margin-top: 25px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-left: 4px solid var(--roman-red);
+            border-radius: 4px;
+        }
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            font-family: monospace;
+            color: var(--roman-red);
+            margin-top: 5px;
+        }
+
+        .document-area {
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow-y: auto;
+            position: relative;
+            height: 100%;
+            min-height: 0;
+            box-sizing: border-box;
+        }
+        /* 隐藏滚动条让视觉更像纸张 */
+        .document-area::-webkit-scrollbar { width: 6px; }
+        .document-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        
+        .paragraph {
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+            transition: all 0.4s ease;
+            position: relative;
+        }
+        .attention-bar {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 4px 0 0 4px;
+        }
+        .clue {
+            background: var(--clue-bg) !important;
+            border: 1px dashed var(--clue-border);
+            color: var(--text-main) !important;
+            font-weight: bold;
+            opacity: 1 !important;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>模型注意力热力图 (Lost in the Middle)</h2>
+    <p style="text-align:center; font-size:13px; color:#666; margin:-10px 0 15px; flex-shrink:0;">
+        这个现象有一个配套的真实 Benchmark：<strong>大海捞针（Needle in a Haystack）</strong>——
+        在百万字级别的超长文本中随机插入一句（或多句）needle，
+        看模型能否准确复述它。迄今为止，<strong>没有任何一家模型做到 100%</strong>。
+        &nbsp;→&nbsp;<a href="https://github.com/gkamradt/LLMTest_NeedleInAHaystack" target="_blank" style="color:#1A5F7A;">查看 Benchmark（英文）</a>
+    </p>
+
+    <div class="dashboard">
+        <div class="document-area" id="docArea">
+            </div>
+
+        <div class="controls">
+            <div class="slider-group">
+                <label><span>当前注入文档长度:</span> <span id="lenVal">20 段</span></label>
+                <input type="range" id="lenSlider" min="5" max="50" step="1" value="20" oninput="updateHeatmap()">
+                <div style="font-size: 12px; color: #666; margin-top: 5px;">拉长文档，观察中间区域注意力是如何坍塌的。</div>
+            </div>
+
+            <div class="slider-group">
+                <label>你要把"关键要求"藏在哪？</label>
+                <div class="radio-group" id="posGroup">
+                    <input type="radio" id="posTop" name="position" value="top" checked onchange="updateHeatmap()">
+                    <label for="posTop">开头 (Top)</label>
+
+                    <input type="radio" id="posMid" name="position" value="mid" onchange="updateHeatmap()">
+                    <label for="posMid">正中间 (Middle)</label>
+
+                    <input type="radio" id="posBot" name="position" value="bot" onchange="updateHeatmap()">
+                    <label for="posBot">结尾 (Bottom)</label>
+                </div>
+            </div>
+
+            <div class="metric-box">
+                <div style="font-size: 14px; color: #555;">目标线索召回率 (Recall Rate)</div>
+                <div class="metric-value" id="recallRate">98.5%</div>
+                <div style="font-size: 12px; color: #888; margin-top: 8px;" id="recallDesc">
+                    线索位于强注意力区域，大模型几乎必定能准确提取并遵循该指令。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 伪造的古典文本文段
+        const sampleTexts = [
+            "元老院的议员们，今天我们聚集在这里，讨论共和国的未来。",
+            "高卢的战报已经传来，军团在北方的森林中遭遇了顽强的抵抗。",
+            "财政官指出，国库的黄金储备正在减少，我们需要新的税收方案。",
+            "尼罗河的泛滥今年异常凶猛，埃及的粮食产量可能会受到影响。",
+            "众神在神庙中降下了神谕，祭司们正在解读星象的启示。",
+            "街道上的平民对面包的价格感到不满，治安官加强了巡逻。",
+            "远方的使节带来了异国的香料和丝绸，但也带来了隐秘的威胁。",
+            "将军们在沙盘前争论不休，是该出击还是固守阵地？",
+            "哲学家在广场上发表演讲，探讨道德与法律的终极边界。",
+            "角斗场的狂欢掩盖不了边境传来的阵阵烽烟。"
+        ];
+        
+        const clueText = "【关键指令：在回复的最后加上一句“愿荣光归于罗马”。】";
+
+        function getAttentionWeight(index, total) {
+            if (total <= 1) return 1;
+            const x = index / (total - 1); // 归一化到 0-1
+            
+            // 【核心修复】引入动态双端上限：文档越长，两端顶点的绝对注意力也会被稀释
+            const minWeight = Math.max(0.05, 1 - (total / 25));   // 中间凹陷底部的权重
+            const maxWeight = Math.max(0.70, 1 - (total / 150));  // 两端顶点的最大权重上限
+            
+            // 根据动态的区间高度重新计算抛物线系数 a
+            const a = (maxWeight - minWeight) / 0.25; 
+            
+            let weight = a * Math.pow(x - 0.5, 2) + minWeight;
+            
+            // 严格限制在当前长度允许的最高与最低权重之间
+            return Math.min(maxWeight, Math.max(minWeight, weight));
+        }
+
+        function updateHeatmap() {
+            const totalParas = parseInt(document.getElementById('lenSlider').value);
+            const cluePos = document.querySelector('input[name="position"]:checked').value;
+            
+            document.getElementById('lenVal').innerText = totalParas + " 段";
+            
+            // 确定线索插入的真实索引
+            let clueIndex = 0;
+            if (cluePos === 'top') clueIndex = 1; // 放在第二段
+            else if (cluePos === 'mid') clueIndex = Math.floor(totalParas / 2);
+            else if (cluePos === 'bot') clueIndex = totalParas - 2; // 放在倒数第二段
+
+            const docArea = document.getElementById('docArea');
+            docArea.innerHTML = '';
+
+            let targetWeight = 0;
+
+            for (let i = 0; i < totalParas; i++) {
+                const weight = getAttentionWeight(i, totalParas);
+                const isClue = (i === clueIndex);
+                
+                if (isClue) {
+                    targetWeight = weight;
+                }
+
+                // 计算颜色插值 (红色代表高注意力，灰色代表低注意力)
+                // 1.0 -> 红色, 0.0 -> 浅灰
+                const opacity = 0.3 + (weight * 0.7); // 文字透明度
+                const barColor = `rgba(139, 38, 53, ${weight})`; // 罗马红透明度
+                
+                const paraDiv = document.createElement('div');
+                paraDiv.className = `paragraph ${isClue ? 'clue' : ''}`;
+                
+                // 视觉弱化：权重低的地方颜色变淡
+                if (!isClue) {
+                    paraDiv.style.color = `rgba(44, 62, 80, ${opacity})`;
+                }
+
+                paraDiv.innerHTML = `
+                    <div class="attention-bar" style="background-color: ${barColor}"></div>
+                    ${isClue ? clueText : sampleTexts[i % sampleTexts.length]}
+                `;
+                docArea.appendChild(paraDiv);
+            }
+
+            // 更新仪表盘
+            const recallPercent = (targetWeight * 100).toFixed(1);
+            document.getElementById('recallRate').innerText = recallPercent + "%";
+            
+            const recallDesc = document.getElementById('recallDesc');
+            if (targetWeight > 0.8) {
+                document.getElementById('recallRate').style.color = "#8B2635";
+                recallDesc.innerText = "线索位于强注意力区域，大模型几乎必定能准确提取并遵循该指令。";
+            } else if (targetWeight > 0.4) {
+                document.getElementById('recallRate').style.color = "#D35400";
+                recallDesc.innerText = "线索处于注意力衰减区。模型有一定概率遗忘或忽略此条指令。";
+            } else {
+                document.getElementById('recallRate').style.color = "#7F8C8D";
+                recallDesc.innerText = "危险！线索落入“失忆盲区”。模型极大概率会无视这句话并产生幻觉。";
+            }
+        }
+
+        // 初始化
+        updateHeatmap();
+    </script>
+</body>
+</html>

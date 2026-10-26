@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temperature, Top-K 与 Top-P 调参模拟器</title>
+    <style>
+        /* 1. 强制全局应用 border-box，根除由于 padding/border 导致的宽度溢出 */
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-color: #F8F5F0;
+            --text-main: #2C3E50;
+            --border-color: #D5CABD;
+            --bar-active: #8B2635; /* 罗马红 */
+            --bar-masked: #CCCCCC;
+            --tag-k: #1A5F7A; /* 典雅深蓝 */
+            --tag-p: #D35400; /* 赭石色 */
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            margin: 0;
+            /* 2. 隐藏多余的横向滚动条，并让纵向滚动条悬浮，防止页面抖动 */
+            overflow-x: hidden;
+            overflow-y: overlay; 
+        }
+        
+        h2 {
+            font-family: "Georgia", serif;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        
+        .slider-group {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px dashed #eee;
+        }
+        
+        .slider-group:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        .slider-group label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+        
+        .chart {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        
+        .bar-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 14px;
+            transition: opacity 0.3s ease;
+        }
+        
+        .word-container {
+            width: 120px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .word-label {
+            font-weight: bold;
+            font-family: "Georgia", serif;
+        }
+        
+        .reason-tag {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .reason-tag.show-k { background-color: var(--tag-k); opacity: 1; }
+        .reason-tag.show-p { background-color: var(--tag-p); opacity: 1; }
+
+        .bar-track {
+            flex: 1;
+            height: 24px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 15px;
+            position: relative;
+        }
+        
+        .bar-fill {
+            height: 100%;
+            background: var(--bar-active);
+            width: 0%;
+            transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.3s ease;
+        }
+        
+        .prob-value {
+            width: 55px;
+            text-align: right;
+            font-family: monospace;
+            font-size: 14px;
+            transition: color 0.3s;
+        }
+        
+        .masked .bar-fill { background: var(--bar-masked); }
+        .masked .word-label, .masked .prob-value { color: #999; text-decoration: line-through; }
+        .desc { font-size: 13px; color: #666; margin-top: 5px; }
+        
+        /* 3. 移动端防溢出适配升级 */
+        @media (max-width: 600px) {
+            .word-container { 
+                width: 70px; /* 进一步缩小固定宽度 */
+                flex-direction: column; 
+                align-items: flex-start; 
+                gap: 4px;
+            }
+            .reason-tag { 
+                font-size: 10px; 
+                padding: 1px 4px; 
+            }
+            .bar-track {
+                margin: 0 10px; /* 缩小移动端边距 */
+            }
+            .prob-value {
+                width: 45px; /* 缩小数值宽度 */
+                font-size: 12px;
+            }
+        }
+
+        /* 4. 定制化古典风格滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+            border: 2px solid var(--bg-color); /* 增加镂空呼吸感 */
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--bar-active); /* 悬停时呼应罗马红 */
+        }
+    </style>
+</head>
+<body>
+
+    <h2>模型采样参数联合绞杀模拟器</h2>
+
+    <div class="controls">
+        <div class="slider-group">
+            <label><span>Temperature (花心程度): <span id="tempVal">1.0</span></span></label>
+            <input type="range" id="tempSlider" min="0.1" max="2.0" step="0.1" value="1.0" oninput="updateChart()">
+            <div class="desc">步骤一：调整原始打分差距。低温只点第一名；高温则强制抹平大家的分数差距。</div>
+        </div>
+        
+        <div class="slider-group">
+            <label><span style="color: var(--tag-k);">Top-K (死磕还是发散): <span id="topkVal">8</span></span></label>
+            <input type="range" id="topkSlider" min="1" max="8" step="1" value="8" oninput="updateChart()">
+            <div class="desc">步骤二：直接一刀切。不管分数多高，永远只看排名前 K 位的候选词（蓝底标签）。</div>
+        </div>
+
+        <div class="slider-group">
+            <label><span style="color: var(--tag-p);">Top-P (翻书范围): <span id="toppVal">1.0</span></span></label>
+            <input type="range" id="toppSlider" min="0.1" max="1.0" step="0.05" value="1.0" oninput="updateChart()">
+            <div class="desc">步骤三：从高分往下累加，凑够这个概率值就停。剩下的被拒绝入场（橙底标签）。</div>
+        </div>
+    </div>
+
+    <div class="chart" id="chartArea">
+        </div>
+
+    <script>
+        const baseVocab = [
+            { word: "巴黎", logit: 6.0 },
+            { word: "里昂", logit: 3.5 },
+            { word: "伦敦", logit: 2.5 },
+            { word: "纽约", logit: 1.0 },
+            { word: "柏林", logit: 0.5 },
+            { word: "罗马", logit: -0.5 },
+            { word: "砖头", logit: -2.0 },
+            { word: "胡言", logit: -3.5 }
+        ];
+
+        function updateChart() {
+            const temp = parseFloat(document.getElementById('tempSlider').value);
+            const topK = parseInt(document.getElementById('topkSlider').value);
+            const topP = parseFloat(document.getElementById('toppSlider').value);
+            
+            document.getElementById('tempVal').innerText = temp.toFixed(1);
+            document.getElementById('topkVal').innerText = topK;
+            document.getElementById('toppVal').innerText = topP.toFixed(2);
+
+            // 1. 应用 Temperature
+            let exps = baseVocab.map(v => Math.exp(v.logit / temp));
+            let sumExp = exps.reduce((a, b) => a + b, 0);
+            
+            let probabilities = baseVocab.map((v, i) => ({
+                word: v.word,
+                prob: exps[i] / sumExp, // 这是原始占比
+                renormProb: 0,          // 留作重规格化后的占比
+                masked: false,
+                maskReason: '' 
+            }));
+
+            // 2. 按照概率降序排序
+            probabilities.sort((a, b) => b.prob - a.prob);
+
+            // 3. 严格遵循底层流水线：先过 Top-K 筛子，再过 Top-P 筛子
+            let cumulativeProb = 0;
+            let survivingSum = 0; // 用于记录所有幸存者的原始概率总和
+
+            for (let i = 0; i < probabilities.length; i++) {
+                // 判断是否被 Top-K 淘汰
+                if (i >= topK) {
+                    probabilities[i].masked = true;
+                    probabilities[i].maskReason = 'k'; 
+                } else {
+                    // 判断是否被 Top-P 淘汰（阈值达到后，后面的全部淘汰）
+                    if (cumulativeProb >= topP && i > 0) {
+                        probabilities[i].masked = true;
+                        probabilities[i].maskReason = 'p';
+                    } else {
+                        cumulativeProb += probabilities[i].prob;
+                        survivingSum += probabilities[i].prob; // 累加幸存者的份额
+                    }
+                }
+            }
+
+            // 4. 【核心新增】重规格化 (Renormalization)
+            // 将被淘汰词汇空出来的概率容量，按比例分配给幸存下来的词汇
+            probabilities.forEach(item => {
+                if (!item.masked && survivingSum > 0) {
+                    item.renormProb = item.prob / survivingSum;
+                }
+            });
+
+            renderChart(probabilities);
+        }
+
+        function renderChart(data) {
+            const chartArea = document.getElementById('chartArea');
+            chartArea.innerHTML = '';
+
+            data.forEach(item => {
+                // 视觉逻辑：如果淘汰，保留它的【原始概率】并标灰划线（让用户知道它原来占多少）
+                // 如果幸存，展示它【重规格化后】膨胀的概率
+                const displayProb = item.masked ? item.prob : item.renormProb;
+                const percent = (displayProb * 100).toFixed(1);
+                
+                let tagClass = '';
+                let tagText = '';
+                
+                if(item.maskReason === 'k') {
+                    tagClass = 'show-k';
+                    tagText = 'Top-K 淘汰';
+                } else if (item.maskReason === 'p') {
+                    tagClass = 'show-p';
+                    tagText = 'Top-P 淘汰';
+                }
+
+                const row = document.createElement('div');
+                row.className = `bar-row ${item.masked ? 'masked' : ''}`;
+                
+                // 给幸存的概率值加上高亮，强调它们“吸收”了被淘汰者的份额
+                let probHtml = item.masked 
+                    ? `${percent}%` 
+                    : `<span style="color:var(--bar-active); font-weight:bold;">${percent}%</span>`;
+
+                row.innerHTML = `
+                    <div class="word-container">
+                        <div class="word-label">${item.word}</div>
+                        <div class="reason-tag ${tagClass}">${tagText}</div>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width: ${percent}%"></div>
+                    </div>
+                    <div class="prob-value">${probHtml}</div>
+                `;
+                chartArea.appendChild(row);
+            });
+        }
+
+        // 初始化渲染
+        updateChart();
+    </script>
+</body>
+</html>

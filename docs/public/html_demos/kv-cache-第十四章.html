@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KV Cache “猪肉焯水”与账单滚雪球模拟器</title>
+    <style>
+        :root {
+            --bg-color: #F8F5F0;
+            --text-main: #2C3E50;
+            --border-color: #D5CABD;
+            --roman-red: #8B2635; /* 炉火/全额计算/昂贵 */
+            --cache-blue: #1A5F7A; /* 冰箱/缓存命中/便宜 */
+            --coin-gold: #D4AF37; /* 账单颜色 */
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        h2 {
+            font-family: "Georgia", serif;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .arena {
+            display: grid;
+            grid-template-columns: 300px 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 900px) {
+            .arena { grid-template-columns: 1fr; }
+        }
+
+        /* 左侧：模拟聊天区 */
+        .chat-panel {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+        }
+        .chat-header {
+            padding: 15px;
+            background: #eee;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: bold;
+            text-align: center;
+            font-family: "Georgia", serif;
+        }
+        .chat-history {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .msg-bubble {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            max-width: 80%;
+            animation: fadeIn 0.3s;
+        }
+        .msg-user { background: #e3f2fd; align-self: flex-end; }
+        .msg-ai { background: #f5f5f5; border: 1px solid #ddd; align-self: flex-start; }
+        .chat-controls {
+            padding: 15px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--text-main);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        button:hover { background-color: #1a252f; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        /* 中右侧：计算引擎与账单区 */
+        .engine-panel {
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            padding: 20px;
+            height: 460px;
+            display: flex;
+            flex-direction: column;
+        }
+        .engine-title {
+            text-align: center;
+            font-family: "Georgia", serif;
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed var(--border-color);
+        }
+        
+        .bill-board {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #fdfbf7;
+            border-radius: 6px;
+            border: 1px solid var(--coin-gold);
+        }
+        .bill-cost {
+            font-size: 32px;
+            font-weight: bold;
+            font-family: monospace;
+            color: var(--roman-red);
+            margin-top: 5px;
+            transition: color 0.3s;
+        }
+        .bill-cost.cheap { color: var(--cache-blue); }
+
+        .process-viz {
+            flex: 1;
+            background: #f9f9f9;
+            border-radius: 6px;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .token-block {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: white;
+            animation: slideIn 0.4s ease;
+        }
+        /* 昂贵的现算 */
+        .calc-full { background: var(--roman-red); border-left: 4px solid #4a141c; }
+        /* 便宜的缓存拿货 */
+        .calc-cache { background: var(--cache-blue); border-left: 4px solid #0f384a; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+    </style>
+</head>
+<body>
+
+    <h2>API 账单滚雪球与 KV Cache 效果对比</h2>
+
+    <div class="arena">
+        
+        <div class="chat-panel">
+            <div class="chat-header">对话轮次演示</div>
+            <div class="chat-history" id="chatHistory">
+                </div>
+            <div class="chat-controls">
+                <button id="nextBtn" onclick="nextTurn()">发送下一轮对话</button>
+                <div style="font-size: 12px; color: #888; margin-top: 8px;">注意看右侧每次发送时，模型需要处理的数据量。</div>
+            </div>
+        </div>
+
+        <div class="engine-panel">
+            <div class="engine-title">❌ 无缓存 (每次从头算)</div>
+            <div class="bill-board">
+                <div style="font-size: 14px; color: #666;">累计消耗 (铜币)</div>
+                <div class="bill-cost" id="noCacheBill">0</div>
+            </div>
+            <div class="process-viz" id="noCacheViz">
+                <div style="text-align: center; color: #aaa; margin-top: 50px; font-style: italic;">等待发送...</div>
+            </div>
+        </div>
+
+        <div class="engine-panel">
+            <div class="engine-title">✅ KV Cache (从冰箱拿货)</div>
+            <div class="bill-board">
+                <div style="font-size: 14px; color: #666;">累计消耗 (铜币)</div>
+                <div class="bill-cost cheap" id="cacheBill">0</div>
+            </div>
+            <div class="process-viz" id="cacheViz">
+                <div style="text-align: center; color: #aaa; margin-top: 50px; font-style: italic;">等待发送...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 模拟一堆渐进的对话
+        const dialogue = [
+            { u: "珠穆朗玛峰有多高？", a: "8848.86米。" },
+            { u: "那第二高呢？", a: "乔戈里峰，8611米。" },
+            { u: "它在哪个山脉？", a: "喀喇昆仑山脉。" },
+            { u: "当地气候如何？", a: "极其恶劣，常年冰雪覆盖，风速极高。" },
+            { u: "普通人能爬吗？", a: "难度极大，死亡率极高，不建议普通人尝试。" },
+            { u: "需要准备多少钱？", a: "商业攀登通常需要几十万人民币的预算。" },
+            { u: "最危险的路段是哪？", a: "被称为‘瓶颈’的冰塔林区域最为致命。" }
+        ];
+
+        let currentTurn = 0;
+        let historyTokens = 0; // 累计积攒的历史长度
+        
+        let totalCostNoCache = 0;
+        let totalCostCache = 0;
+
+        const PRICE_FULL = 10;   // 全额计算每块数据 10 枚铜币
+        const PRICE_CACHE = 1;   // 缓存命中打一折，每块数据 1 枚铜币 (参考各家一折机制)
+
+        function nextTurn() {
+            if (currentTurn >= dialogue.length) {
+                alert("演示对话已结束！看上面的账单差距是不是很吓人？");
+                return;
+            }
+
+            const chatHistory = document.getElementById('chatHistory');
+            const turnData = dialogue[currentTurn];
+
+            // 1. 渲染聊天界面
+            chatHistory.innerHTML += `<div class="msg-bubble msg-user">${turnData.u}</div>`;
+            setTimeout(() => {
+                chatHistory.innerHTML += `<div class="msg-bubble msg-ai">${turnData.a}</div>`;
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }, 500);
+
+            // 2. 本轮的新增 Token 假设为一个固定块
+            const newTokenBlock = 1; 
+
+            // ==========================================
+            // 无缓存处理逻辑 (滚雪球)
+            // 每次都要把之前的 historyTokens 和 newTokenBlock 加起来全额计算
+            // ==========================================
+            const noCacheViz = document.getElementById('noCacheViz');
+            if(currentTurn === 0) noCacheViz.innerHTML = ''; 
+            
+            // 渲染这轮无缓存的计算过程
+            let turnVizNoCache = document.createElement('div');
+            turnVizNoCache.style.borderBottom = "1px dashed #ccc";
+            turnVizNoCache.style.paddingBottom = "8px";
+            turnVizNoCache.style.marginBottom = "8px";
+            
+            turnVizNoCache.innerHTML = `<div style="font-size:12px; color:#555; margin-bottom:4px;">第 ${currentTurn + 1} 轮请求处理：</div>`;
+            
+            // 历史部分全额重算
+            if (historyTokens > 0) {
+                turnVizNoCache.innerHTML += `
+                    <div class="token-block calc-full" style="margin-bottom:4px;">
+                        <span>🔥 历史对话 (${historyTokens} 块)</span>
+                        <span>重新计算</span>
+                    </div>`;
+                totalCostNoCache += historyTokens * PRICE_FULL;
+            }
+            // 新增部分计算
+            turnVizNoCache.innerHTML += `
+                <div class="token-block calc-full">
+                    <span>🔥 新增对话 (1 块)</span>
+                    <span>全额计算</span>
+                </div>`;
+            totalCostNoCache += newTokenBlock * PRICE_FULL;
+            
+            noCacheViz.appendChild(turnVizNoCache);
+            document.getElementById('noCacheBill').innerText = totalCostNoCache;
+            noCacheViz.scrollTop = noCacheViz.scrollHeight;
+
+            // ==========================================
+            // KV Cache 处理逻辑 (猪肉焯水)
+            // ==========================================
+            const cacheViz = document.getElementById('cacheViz');
+            if(currentTurn === 0) cacheViz.innerHTML = ''; 
+            
+            let turnVizCache = document.createElement('div');
+            turnVizCache.style.borderBottom = "1px dashed #ccc";
+            turnVizCache.style.paddingBottom = "8px";
+            turnVizCache.style.marginBottom = "8px";
+            
+            turnVizCache.innerHTML = `<div style="font-size:12px; color:#555; margin-bottom:4px;">第 ${currentTurn + 1} 轮请求处理：</div>`;
+            
+            // 第一轮全算，后面命中
+            if (historyTokens > 0) {
+                turnVizCache.innerHTML += `
+                    <div class="token-block calc-cache" style="margin-bottom:4px;">
+                        <span>❄️ 历史对话 (${historyTokens} 块)</span>
+                        <span>缓存命中 (打一折)</span>
+                    </div>`;
+                totalCostCache += historyTokens * PRICE_CACHE;
+            }
+            // 新增部分全额计算
+            turnVizCache.innerHTML += `
+                <div class="token-block calc-full">
+                    <span>🔥 新增对话 (1 块)</span>
+                    <span>全额计算</span>
+                </div>`;
+            totalCostCache += newTokenBlock * PRICE_FULL;
+
+            cacheViz.appendChild(turnVizCache);
+            document.getElementById('cacheBill').innerText = totalCostCache;
+            cacheViz.scrollTop = cacheViz.scrollHeight;
+
+            // 更新历史 Token 累加值 (每次把本轮的新问题和AI回答积攒进历史)
+            historyTokens += newTokenBlock;
+            currentTurn++;
+
+            if (currentTurn >= dialogue.length) {
+                document.getElementById('nextBtn').innerText = "演示结束";
+                document.getElementById('nextBtn').disabled = true;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分词器刀法对比演示</title>
+    <style>
+        :root {
+            --bg-color: #F8F5F0; /* 羊皮纸/大理石质感 */
+            --text-main: #2C3E50;
+            --border-color: #D5CABD;
+            --ds-color: #1A5F7A; /* 典雅深蓝 (DeepSeek代表) */
+            --claude-color: #8B2635; /* 罗马红 (Claude代表) */
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        h2 {
+            font-family: "Georgia", "Times New Roman", serif;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .input-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 16px;
+            background: #fff;
+        }
+        button {
+            padding: 12px 24px;
+            background-color: var(--text-main);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        button:hover { background-color: #1a252f; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 600px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        .card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+        .card h3 {
+            margin-top: 0;
+            font-family: "Georgia", serif;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ds-title { color: var(--ds-color); }
+        .claude-title { color: var(--claude-color); }
+        .token-count {
+            font-size: 14px;
+            background: #eee;
+            padding: 4px 8px;
+            border-radius: 12px;
+            color: #555;
+        }
+        .token-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 15px;
+        }
+        .token {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 15px;
+            font-family: monospace;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        .token.ds { background-color: rgba(26, 95, 122, 0.1); border: 1px solid var(--ds-color); }
+        .token.claude { background-color: rgba(139, 38, 53, 0.1); border: 1px solid var(--claude-color); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <h2>剖腹数粉：中英分词效率对比</h2>
+    
+    <div class="input-section">
+        <input type="text" id="textInput" value="帮我写一份关于人工智能发展趋势的报告" placeholder="输入一句中文试试...">
+        <button onclick="tokenize()">切分</button>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3 class="ds-title">本土大模型 (模拟)<span class="token-count" id="dsCount">0 Tokens</span></h3>
+            <div class="token-container" id="dsTokens"></div>
+            <p style="font-size: 12px; color: #888; margin-top: 15px;">更懂中文，尽量按词组切分，刀数少，省钱。</p>
+        </div>
+
+        <div class="card">
+            <h3 class="claude-title">海外大模型 (模拟)<span class="token-count" id="claudeCount">0 Tokens</span></h3>
+            <div class="token-container" id="claudeTokens"></div>
+            <p style="font-size: 12px; color: #888; margin-top: 15px;">中文词表小，大概率被切成单字或乱码块，刀数多，费钱。</p>
+        </div>
+    </div>
+
+    <script>
+        function tokenize() {
+            const text = document.getElementById('textInput').value;
+            if(!text) return;
+
+            // 1. 模拟本土模型 (使用 Intl.Segmenter 按词切分)
+            const dsTokensDiv = document.getElementById('dsTokens');
+            dsTokensDiv.innerHTML = '';
+            let dsCount = 0;
+            const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+            const segments = segmenter.segment(text);
+            
+            for (const {segment} of segments) {
+                if(segment.trim() === "") continue; 
+                let span = document.createElement('span');
+                span.className = 'token ds';
+                span.innerText = segment;
+                dsTokensDiv.appendChild(span);
+                dsCount++;
+            }
+            document.getElementById('dsCount').innerText = dsCount + " Tokens";
+
+            // 2. 模拟海外模型 (强制单字/双字切分，模拟低效)
+            const claudeTokensDiv = document.getElementById('claudeTokens');
+            claudeTokensDiv.innerHTML = '';
+            let claudeCount = 0;
+            let chars = text.split('');
+            let i = 0;
+            while(i < chars.length) {
+                if(chars[i].trim() === "") { i++; continue; }
+                let step = Math.random() > 0.8 ? 2 : 1; // 偶尔两个字连在一起，大多是单字
+                let chunk = chars.slice(i, i + step).join('');
+                let span = document.createElement('span');
+                span.className = 'token claude';
+                span.innerText = chunk;
+                claudeTokensDiv.appendChild(span);
+                claudeCount++;
+                i += step;
+            }
+            document.getElementById('claudeCount').innerText = claudeCount + " Tokens";
+        }
+        
+        // 初始加载
+        tokenize();
+    </script>
+</body>
+</html>
