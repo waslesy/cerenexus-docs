@@ -34,6 +34,9 @@ jobs:
 
       - name: Build VitePress site
         run: npm run build
+        env:
+          # 站点已绑定 docs.cerenexus.cc，使用根路径部署
+          SITE_BASE: /
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
