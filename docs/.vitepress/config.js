@@ -1,14 +1,11 @@
-// 部署环境说明：
-// GitHub Pages 项目站点部署在 /cerenexus-docs/ 子路径下，因此默认 base 为
-// /cerenexus-docs/。本地 `npm run dev` 使用根路径；将来绑定 docs.cerenexus.cc
-// 后，用 SITE_BASE=/ npm run build 即可恢复根路径部署，无需改源码。
-const base =
-  process.env.SITE_BASE ||
-  (process.env.NODE_ENV === 'development' ? '/' : '/cerenexus-docs/')
+// 站点已绑定自定义域名 https://docs.cerenexus.cc/，部署在根路径。
+// 如需临时部署到 GitHub Pages 项目子路径（/cerenexus-docs/），
+// 构建时设置 SITE_BASE=/cerenexus-docs/ 即可，无需改动文档。
+const base = process.env.SITE_BASE || '/'
 
 // VitePress 会自动为 Markdown 链接、图片和主题资源加上 base，但不会处理
 // Markdown 中的原始 HTML。文档里的交互式演示用 <iframe src="/html_demos/...">
-// 这样的根绝对路径，这里统一补上 base，避免子路径部署时 404。
+// 这样的根绝对路径，这里统一补上 base（默认 '/' 时不做任何改动）。
 function rewriteRootPathsInHtml(md) {
   if (base === '/') return
   const rewrite = (content) =>
