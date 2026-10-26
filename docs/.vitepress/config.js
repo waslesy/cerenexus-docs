@@ -1,7 +1,42 @@
+// 部署环境说明：
+// GitHub Pages 项目站点部署在 /cerenexus-docs/ 子路径下，因此默认 base 为
+// /cerenexus-docs/。本地 `npm run dev` 使用根路径；将来绑定 docs.cerenexus.cc
+// 后，用 SITE_BASE=/ npm run build 即可恢复根路径部署，无需改源码。
+const base =
+  process.env.SITE_BASE ||
+  (process.env.NODE_ENV === 'development' ? '/' : '/cerenexus-docs/')
+
+// VitePress 会自动为 Markdown 链接、图片和主题资源加上 base，但不会处理
+// Markdown 中的原始 HTML。文档里的交互式演示用 <iframe src="/html_demos/...">
+// 这样的根绝对路径，这里统一补上 base，避免子路径部署时 404。
+function rewriteRootPathsInHtml(md) {
+  if (base === '/') return
+  const rewrite = (content) =>
+    content.replace(/(\s(?:src|href))="\/(?!\/)/g, `$1="${base}`)
+  for (const rule of ['html_block', 'html_inline']) {
+    const original = md.renderer.rules[rule]
+    md.renderer.rules[rule] = (tokens, idx, options, env, self) => {
+      tokens[idx].content = rewrite(tokens[idx].content)
+      return original ? original(tokens, idx, options, env, self) : tokens[idx].content
+    }
+  }
+}
+
 export default {
+  base,
   title: 'CereNexus API 入门教程',
   description: '给小白看的API扫盲指南',
+  markdown: {
+    config: rewriteRootPathsInHtml
+  },
   themeConfig: {
+    editLink: {
+      pattern: 'https://github.com/waslesy/cerenexus-docs/edit/main/docs/:path',
+      text: '在 GitHub 上编辑此页'
+    },
+    lastUpdated: {
+      text: '最后更新于'
+    },
     nav: [
       { text: '入门教程', link: '/beginner/' },
       { text: '进阶教程', link: '/advanced/' }
