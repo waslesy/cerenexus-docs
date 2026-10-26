@@ -4,7 +4,7 @@
 
 ## 一、最简单的改法（无需本地环境）
 
-1. 打开线上页面，点击页面底部或右上角的 **「在 GitHub 上编辑此页」**；
+1. 打开线上任意一篇文章，滚动到正文下方，点 **「在 GitHub 上编辑此页」**；
    也可以直接在 GitHub 仓库里找到 `docs/beginner/第X章.md`。
 2. 点铅笔图标编辑。
 3. 写完在下方填一句修改说明，选择 **Create a new branch for this commit and start a pull request**。
@@ -36,7 +36,7 @@ npm run dev      # 打开 http://localhost:5173
   <iframe src="/html_demos/演示文件名.html" style="width:100%;height:520px;border:0;"></iframe>
   ```
 
-  写根绝对路径 `/html_demos/...` 即可，构建时会自动适配 GitHub Pages 子路径。
+  写根绝对路径 `/html_demos/...` 即可，构建时会自动适配。
 - 演示文件请保持单文件自包含（CSS/JS 内联），不要依赖外部 CDN。
 
 ## 四、Pull Request 流程
@@ -45,7 +45,7 @@ npm run dev      # 打开 http://localhost:5173
 2. 修改内容并提交。
 3. 发起 PR 到 `main` 分支。
 4. GitHub Actions 会自动运行 **Build Check**，只有构建通过才能合并。
-5. 维护者 Review 后合并，合并即自动部署。
+5. 维护者 Review 后合并，合并即自动部署到 https://docs.cerenexus.cc/ 。
 
 ## 五、不要提交的内容
 
